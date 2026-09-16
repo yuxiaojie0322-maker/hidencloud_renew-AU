@@ -10,6 +10,7 @@ EMAIL        = os.environ.get('EMAIL') or ""           # 登录邮箱,可选，�
 PASSWORD     = os.environ.get('PASSWORD') or ""        # 登录密码,可选，作为备用
 TG_BOT_TOKEN = os.environ.get('TG_BOT_TOKEN') or ""    # Telegram Bot Token,可选
 TG_CHAT_ID   = os.environ.get('TG_CHAT_ID') or ""      # Telegram Chat ID,可选
+SERVER_NAME  = os.environ.get('SERVER_NAME') or ""      # 服务器备注/名称,可选
 
 BASE_URL = "https://dash.hidencloud.com"
 LOGIN_URL = f"{BASE_URL}/auth/login"
@@ -59,9 +60,11 @@ def send_telegram_notification(status, old_due, new_due):
     else:
         masked_email = EMAIL[:2] + '****' 
 
+    server_info = f"🖥️ 服务器: {SERVER_NAME}\n" if SERVER_NAME else ""
     text = (
         f"🎉 HidenCloud 续期通知\n\n"
         f"{status}\n"
+        f"{server_info}"
         f"👤 账号: {masked_email}\n"
         f"📅 续期前到期：{old_due}\n"
         f"📅 续期后到期：{new_due}\n"
