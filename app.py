@@ -2,6 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import os,re,sys,time,random,requests
+try:
+    import sitecustomize
+except Exception:
+    pass
+
 from playwright.sync_api import sync_playwright
 
 # --- 环境变量 ---
