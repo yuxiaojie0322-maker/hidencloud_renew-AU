@@ -45,11 +45,21 @@ jobs:
         env:
           EMAIL: ${{ secrets.EMAIL }}
           PASSWORD: ${{ secrets.PASSWORD }}
-          COOKIE_VALUE: ${{ secrets.COOKIE_VALUE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           SERVER_NAME: ${{ secrets.SERVER_NAME || vars.SERVER_NAME }}
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python -u app.py
+
+      # 无论成功或失败，均保存排查截图与日志，方便在 Actions 页面查看
+      - name: 📤 上传排错截图与日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: |
+            *.png
+            sing-box.log
+          retention-days: 3
 
       # 更新时间到time.txt,避免6个月未更新导致工作流暂停
       - name: ⌛ 更新时间
