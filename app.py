@@ -8,12 +8,11 @@ except ImportError:
     from playwright.sync_api import sync_playwright
 
 # --- 环境变量 (可在Settings里设置secrets或者私库直接填写在双引号里)---
-COOKIE_VALUE = os.environ.get('COOKIE_VALUE') or ""    # remember_web cookie 值，必填
-EMAIL        = os.environ.get('EMAIL') or ""           # 登录邮箱,可选，作为备用, 建议填写
-PASSWORD     = os.environ.get('PASSWORD') or ""        # 登录密码,可选，作为备用, 建议填写
+EMAIL        = os.environ.get('EMAIL') or ""           # 登录邮箱,必填
+PASSWORD     = os.environ.get('PASSWORD') or ""        # 登录密码,必填
 TG_CHAT_ID   = os.environ.get('TG_CHAT_ID') or ""      # Telegram Chat ID,可选，通知
 TG_BOT_TOKEN = os.environ.get('TG_BOT_TOKEN') or ""    # Telegram Bot Token,可选
-SERVER_NAME  = os.environ.get('SERVER_NAME') or os.environ.get('SERVER') or os.environ.get('HOST_NAME') or "" # 服务器名称/备注
+SERVER_NAME  = os.environ.get('SERVER_NAME') or os.environ.get('SERVER') or os.environ.get('HOST_NAME') or "" # 服务器名称/备注/ID
 
 BASE_URL = "https://dash.hidencloud.com"
 LOGIN_URL = f"{BASE_URL}/auth/login"
@@ -91,7 +90,7 @@ def send_telegram_notification(status, old_due="未知", new_due="未知", serve
     elif EMAIL:
         masked_email = EMAIL[:2] + '****'
     else:
-        masked_email = "Cookie 免密登录"
+        masked_email = "未配置邮箱"
 
     # 4. 获取当前出口 IP
     current_ip = get_current_ip(PROXY_SERVER if IS_PROXY else None)
@@ -382,10 +381,10 @@ def solve_turnstile(page, timeout=120, success_check=None,
                 elif time.time() - iframe_gone_since >= 8:
                     log("✅ Turnstile 验证通过（挑战框已消失）！")
                     return True
-            elif (not require_positive and success_check is None
-                    and time.time() - start >= appear_grace):
-                log("ℹ️ 页面未出现 Turnstile，无需处理")
-                return True
+            elif time.time() - start >= (appear_grace if not require_positive else 8):
+                if not had_iframe:
+                    log("ℹ️ 页面未出现 Turnstile 或无需处理")
+                    return True
             time.sleep(1)
             continue
 
@@ -443,32 +442,7 @@ def solve_turnstile(page, timeout=120, success_check=None,
     return False
 
 def login(page):
-    # 1. Cookie 登录尝试
-    if COOKIE_VALUE:
-        log("📇 尝试 Cookie 登录...")
-        try:
-            page.context.add_cookies([{
-                'name': 'remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d',
-                'value': COOKIE_VALUE,
-                'domain': 'dash.hidencloud.com',
-                'path': '/',
-                'expires': int(time.time()) + 3600 * 24 * 365,
-                'httpOnly': True,
-                'secure': True,
-                'sameSite': 'Lax'
-            }])
-            page.goto(f"{BASE_URL}/dashboard", wait_until="domcontentloaded", timeout=60000)
-            solve_turnstile(page, timeout=90, success_check=page_ready, reload_after=8)
-            page_title = page.title()
-            log(f"📝 当前Title: {page_title}")
-            if "auth/login" not in page.url:
-                log(f"✅ Cookie 登录成功！当前已到达dashboard页面")
-                return True
-            log("⚠️ Cookie 失效，切换到账号密码登录...")
-        except Exception as e:
-            log(f"⚠️ Cookie 登录出现异常: 账号密码登录...")
-
-    # 2. 账号密码登录
+    # 账号密码登录
     if not EMAIL or not PASSWORD:
         log("❌ 未配置 EMAIL/PASSWORD，无法进行账号密码登录")
         return False
@@ -559,14 +533,35 @@ def get_server_id(page):
         html = page.content()
         log(f"📝 页面长度: {len(html)}, URL: {page.url}")
 
-        # 方案1: 从 href 链接中提取 /service/数字/manage
+        # 方案0: 若环境变量 SERVER_NAME 直接指定了数字 ID (如 "218079" 或 "#218079")
+        clean_name = re.sub(r'^[#\s]+', '', SERVER_NAME).strip()
+        if clean_name.isdigit():
+            log(f"✅ 从环境变量 SERVER_NAME 直接获取到 Server ID: {clean_name}")
+            return clean_name
+
+        # 方案1: 如果配置了 SERVER_NAME，优先在页面中定位包含该名称的区块，提取关联的 service id
+        if SERVER_NAME:
+            pattern = rf'{re.escape(SERVER_NAME)}[\s\S]*?/service/(\d+)/manage'
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                server_id = match.group(1)
+                log(f"✅ 根据 SERVER_NAME [{SERVER_NAME}] 匹配到 Server ID: {server_id}")
+                return server_id
+            pattern_rev = rf'/service/(\d+)/manage[\s\S]*?{re.escape(SERVER_NAME)}'
+            match_rev = re.search(pattern_rev, html, re.IGNORECASE)
+            if match_rev:
+                server_id = match_rev.group(1)
+                log(f"✅ 根据 SERVER_NAME [{SERVER_NAME}] 逆向匹配到 Server ID: {server_id}")
+                return server_id
+
+        # 方案2: 从 href 链接中提取 /service/数字/manage
         matches = re.findall(r'/service/(\d+)/manage', html)
         if matches:
             server_id = matches[0]
             log(f"✅ 从链接中获取到 Server ID: {server_id}")
             return server_id
 
-        # 方案2: 从 span 标签中提取 #数字 (如 "Free Server #218079")
+        # 方案3: 从 span 标签中提取 #数字 (如 "Free Server #218079")
         matches = re.findall(r'#(\d{4,})', html)
         if matches:
             server_id = matches[0]
@@ -611,8 +606,8 @@ def renew_service(page):
         time.sleep(3)
 
         log("🖱️ 准备点击 'Renew' 按钮...")
-        renew_btn = page.locator('button:has-text("Renew")')
-        create_btn = page.locator('button:has-text("Create Invoice")')
+        renew_btn = page.locator('button:has-text("Renew"), a:has-text("Renew"), [role="button"]:has-text("Renew"), button:has-text("续期"), a:has-text("续期")').first
+        create_btn = page.locator('button:has-text("Create Invoice"), a:has-text("Create Invoice"), [role="button"]:has-text("Create Invoice")').first
 
         modal_opened = False
         for i in range(5):
@@ -622,9 +617,11 @@ def renew_service(page):
                 log(f"🖱️ 第 {i+1} 次尝试点击 'Renew'...")
                 renew_btn.click()
 
-                # 等待检测是否出现“未到续期时间”弹窗
+                # 等待检测是否出现“未到续期时间”弹窗或服务暂停
                 time.sleep(3)
                 page_text = page.locator("body").inner_text()
+                if "suspended" in page_text.lower():
+                    log("⚠️ 检测到页面包含 Suspended 状态，该机器可能已暂停！")
                 if "Renewal Restricted" in page_text or "can only renew" in page_text.lower():
                     log("⚠️ 未到续期时间，无法续期。")
                     page.screenshot(path="renew_not_allowed.png")
@@ -740,11 +737,10 @@ def renew_service(page):
 
 def main():
     # 检查必要环境变量
-    log(f"🔍 凭证检测: COOKIE_VALUE={'已配置' if COOKIE_VALUE else '未配置'}, "
-        f"EMAIL={'已配置' if EMAIL else '未配置'}, PASSWORD={'已配置' if PASSWORD else '未配置'}")
-    if not COOKIE_VALUE and not (EMAIL and PASSWORD):
-        log("❌ 缺少登录凭证")
-        send_telegram_notification("❌ 启动失败", detail="缺少必要的登录凭证 (COOKIE_VALUE / EMAIL / PASSWORD)")
+    log(f"🔍 凭证检测: EMAIL={'已配置' if EMAIL else '未配置'}, PASSWORD={'已配置' if PASSWORD else '未配置'}")
+    if not (EMAIL and PASSWORD):
+        log("❌ 缺少登录凭证 (EMAIL / PASSWORD)")
+        send_telegram_notification("❌ 启动失败", detail="缺少必要的登录凭证 (EMAIL / PASSWORD)")
         sys.exit(1)
 
     global SERVICE_URL
@@ -778,7 +774,7 @@ def main():
 
             if not login(page):
                 log("❌ 登录失败，发送通知并退出")
-                send_telegram_notification("❌ 登录失败", detail="Cookie 已失效且账号密码登录未通过")
+                send_telegram_notification("❌ 登录失败", detail="账号密码登录未通过，请检查账号密码或验证码拦截")
                 sys.exit(1)
 
             # 登录成功后，自动获取 Server ID
