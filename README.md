@@ -7,16 +7,12 @@
 
 | Secret 名称 | 是否必填 | 说明 | 示例 |
 |---|---|---|---|
-| `COOKIE_VALUE`  | ✅必填 | Remenber_web cookie的值,有效期大于1年  |
-| `EMAIL`         | ✅必填 | HidenCloud 邮箱 |
-| `PASSWORD`      | ✅必填 | HidenCloud 密码 |
+| `EMAIL`         | ✅必填 | HidenCloud 登录邮箱 |
+| `PASSWORD`      | ✅必填 | HidenCloud 登录密码 |
+| `SERVER_NAME`   | ❌可选 | 机器名称或纯数字机器ID(多机器时推荐设置) |
 | `NODE_LINK`     | ❌可选 | 代理节点地址,例如:vless:// vmess:// trojan:// hysteria2:// anytls://|
 | `TG_BOT_TOKEN`  | ❌可选 | Telegram Bot Token | 
 | `TG_CHAT_ID`    | ❌可选 | Telegram Chat ID |
-
-
-`COOKIE_VALUE`的获取如图(登录dashborad后F12或右键检查,选择 应用程序 或 Appcations 或 存储,左边找到cookie获取)
-<img width="1200" height="600" alt="image" src="https://github.com/user-attachments/assets/be28a597-eef8-481b-862d-cc98533a2e27" />
 
 
 ### 代理格式（确认在v2rayN里使用正常的节点,使用注册时使用的代理节点）
