@@ -3,13 +3,19 @@
 
 import os,re,sys,time,random,requests
 try:
+    import sitecustomize
+except Exception:
+    pass
+
+try:
     from patchright.sync_api import sync_playwright
 except ImportError:
     from playwright.sync_api import sync_playwright
 
 # --- 环境变量 (可在Settings里设置secrets或者私库直接填写在双引号里)---
-EMAIL        = os.environ.get('EMAIL') or ""           # 登录邮箱,必填
-PASSWORD     = os.environ.get('PASSWORD') or ""        # 登录密码,必填
+COOKIE_VALUE = os.environ.get('COOKIE_VALUE') or ""    # remember_web cookie 值，可选（配置可直接绕过登录盾）
+EMAIL        = os.environ.get('EMAIL') or os.environ.get('HIDENCLOUD_EMAIL') or ""           # 登录邮箱
+PASSWORD     = os.environ.get('PASSWORD') or os.environ.get('HIDENCLOUD_PASSWORD') or ""        # 登录密码
 TG_CHAT_ID   = os.environ.get('TG_CHAT_ID') or ""      # Telegram Chat ID,可选，通知
 TG_BOT_TOKEN = os.environ.get('TG_BOT_TOKEN') or ""    # Telegram Bot Token,可选
 SERVER_NAME  = os.environ.get('SERVER_NAME') or os.environ.get('SERVER') or os.environ.get('HOST_NAME') or "" # 服务器名称/备注/ID
@@ -381,10 +387,15 @@ def solve_turnstile(page, timeout=120, success_check=None,
                 elif time.time() - iframe_gone_since >= 8:
                     log("✅ Turnstile 验证通过（挑战框已消失）！")
                     return True
-            elif time.time() - start >= (appear_grace if not require_positive else 8):
+            elif time.time() - start >= (appear_grace if not require_positive else 10):
                 if not had_iframe:
-                    log("ℹ️ 页面未出现 Turnstile 或无需处理")
-                    return True
+                    if success_check is not None:
+                        if success_check(page):
+                            log("✅ 目标页面已就绪，无需额外处理 Turnstile")
+                            return True
+                    elif page_ready(page):
+                        log("ℹ️ 页面未出现 Turnstile 且页面已就绪，无需处理")
+                        return True
             time.sleep(1)
             continue
 
@@ -442,7 +453,36 @@ def solve_turnstile(page, timeout=120, success_check=None,
     return False
 
 def login(page):
-    # 账号密码登录
+    # 1. 如果配置了 COOKIE_VALUE，优先尝试 Cookie 直通登录
+    if COOKIE_VALUE:
+        log("📇 尝试 Cookie 登录...")
+        try:
+            c_name = 'remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d'
+            c_val = COOKIE_VALUE
+            if '=' in COOKIE_VALUE and ';' not in COOKIE_VALUE:
+                c_name, c_val = COOKIE_VALUE.split('=', 1)
+            page.context.add_cookies([{
+                'name': c_name.strip(),
+                'value': c_val.strip(),
+                'domain': 'dash.hidencloud.com',
+                'path': '/',
+                'expires': int(time.time()) + 3600 * 24 * 365,
+                'httpOnly': True,
+                'secure': True,
+                'sameSite': 'Lax'
+            }])
+            page.goto(f"{BASE_URL}/dashboard", wait_until="domcontentloaded", timeout=60000)
+            solve_turnstile(page, timeout=60, success_check=page_ready, reload_after=8)
+            page_title = page.title()
+            log(f"📝 当前Title: {page_title}")
+            if "auth/login" not in page.url and ("/dashboard" in page.url or "/service" in page.url):
+                log("✅ Cookie 登录成功！已直达 dashboard")
+                return True
+            log("⚠️ Cookie 失效或已过期，自动切换至账号密码登录...")
+        except Exception as e:
+            log(f"⚠️ Cookie 登录异常: {e}")
+
+    # 2. 账号密码登录
     if not EMAIL or not PASSWORD:
         log("❌ 未配置 EMAIL/PASSWORD，无法进行账号密码登录")
         return False
@@ -459,6 +499,7 @@ def login(page):
 
         log("🛡️ 处理登录页第一道 Turnstile验证...")
         if not solve_turnstile(page, timeout=180, success_check=login_form_visible,
+                               appear_grace=15,
                                reload_after=8,
                                shot_on_timeout="login_turnstile1_fail.png"):
             log("❌ 第一道 Turnstile 未通过，无法进入登录表单")
