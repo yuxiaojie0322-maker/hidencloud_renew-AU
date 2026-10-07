@@ -43,7 +43,7 @@ jobs:
 
       - name: 🚀 运行续期脚本
         env:
-        env:
+
           EMAIL: ${{ secrets.EMAIL || secrets.HIDENCLOUD_EMAIL }}
           PASSWORD: ${{ secrets.PASSWORD || secrets.HIDENCLOUD_PASSWORD }}
           COOKIE_VALUE: ${{ secrets.COOKIE_VALUE }}
