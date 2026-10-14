@@ -51,7 +51,6 @@ jobs:
         env:
           EMAIL: ${{ secrets.EMAIL || secrets.HIDENCLOUD_EMAIL }}
           PASSWORD: ${{ secrets.PASSWORD || secrets.HIDENCLOUD_PASSWORD }}
-          COOKIE_VALUE: ${{ secrets.COOKIE_VALUE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           SERVER_NAME: ${{ secrets.SERVER_NAME || vars.SERVER_NAME }}
